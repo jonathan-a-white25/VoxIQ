@@ -1,30 +1,31 @@
-/* ── VoxIQ Stylesheet ─────────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --bg:           #080C14;
-  --surface:      #0E1623;
-  --surface2:     #162030;
-  --border:       #1E2D45;
-  --accent:       #00F5C4;
-  --accent-dim:   rgba(0, 245, 196, 0.10);
-  --accent-glow:  rgba(0, 245, 196, 0.30);
-  --red:          #FF4D6D;
-  --red-dim:      rgba(255, 77, 109, 0.10);
-  --yellow:       #FFD166;
-  --blue:         #00B4D8;
-  --purple:       #7C6AF7;
-  --green:        #4CAF82;
-  --text:         #E2E8F0;
-  --text-muted:   #64748B;
-  --radius:       10px;
-  --radius-lg:    16px;
+  --bg: #F8FAFC;
+  --surface: #FFFFFF;
+  --surface2: #F1F5F9;
+  --border: #E2E8F0;
+  --border2: #CBD5E1;
+  --accent: #3B82F6;
+  --accent-dim: rgba(59,130,246,0.08);
+  --accent-hover: #2563EB;
+  --green: #10B981;
+  --red: #EF4444;
+  --yellow: #F59E0B;
+  --text: #0F172A;
+  --text-mid: #334155;
+  --text-muted: #64748B;
+  --text-light: #94A3B8;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────── */
 .stApp {
   background: var(--bg) !important;
-  font-family: 'DM Mono', monospace !important;
+  font-family: 'Inter', sans-serif !important;
 }
 
 [data-testid="stSidebar"] {
@@ -33,25 +34,65 @@
 }
 
 [data-testid="stSidebar"] * {
-  font-family: 'DM Mono', monospace !important;
+  font-family: 'Inter', sans-serif !important;
 }
 
-/* Hide sidebar toggle */
 [data-testid="collapsedControl"] { display: none !important; }
 button[kind="header"] { display: none !important; }
 
+/* ── Sidebar ──────────────────────────────────────────────────────────── */
+.sidebar-logo {
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+  padding: 0.5rem 0 0.2rem;
+}
+
+.sidebar-logo span { color: var(--accent); }
+
+.sidebar-tagline {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.8rem 0;
+}
+
+.sidebar-section {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.sidebar-footer {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.65rem;
+  color: var(--text-light);
+}
+
 /* ── Header ───────────────────────────────────────────────────────────── */
 .app-header {
-  padding: 1.5rem 0 1.2rem;
+  padding: 1rem 0 0.8rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 1.5rem;
 }
 
 .app-title {
-  font-family: 'Syne', sans-serif !important;
-  font-weight: 800;
-  font-size: 2.2rem;
-  letter-spacing: -0.03em;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 700;
+  font-size: 1.6rem;
+  letter-spacing: -0.02em;
   color: var(--text) !important;
   line-height: 1.1;
 }
@@ -59,44 +100,96 @@ button[kind="header"] { display: none !important; }
 .app-title span { color: var(--accent); }
 
 .app-subtitle {
-  font-family: 'DM Mono', monospace;
-  font-size: 0.72rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
   color: var(--text-muted);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-top: 0.3rem;
+  margin-top: 0.2rem;
 }
 
-/* ── Cards ────────────────────────────────────────────────────────────── */
-.card {
+/* ── Hero block ───────────────────────────────────────────────────────── */
+.hero-block {
+  padding: 1.5rem 0 1rem;
+}
+
+.hero-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.hero-title span { color: var(--accent); }
+
+.hero-sub {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+  line-height: 1.6;
+  max-width: 680px;
+}
+
+/* ── KPI Cards ────────────────────────────────────────────────────────── */
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.2rem 1rem;
+  text-align: center;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.kpi-value {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+  margin-bottom: 0.3rem;
+}
+
+.kpi-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+}
+
+/* ── Feature cards ────────────────────────────────────────────────────── */
+.feature-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.4rem;
   margin-bottom: 1rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: var(--shadow);
 }
 
-.card:hover {
-  border-color: rgba(0,245,196,0.25);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+.feature-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.6rem;
 }
 
-.card-positive {
-  border-left: 3px solid var(--green) !important;
-  background: linear-gradient(135deg, var(--surface) 0%, rgba(76,175,130,0.04) 100%);
-}
-
-.card-negative {
-  border-left: 3px solid var(--red) !important;
-  background: linear-gradient(135deg, var(--surface) 0%, rgba(255,77,109,0.04) 100%);
+.feature-desc {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.6;
 }
 
 /* ── Section headers ──────────────────────────────────────────────────── */
 .section-header {
-  font-family: 'DM Mono', monospace;
+  font-family: 'Inter', sans-serif;
   font-size: 0.65rem;
-  letter-spacing: 0.22em;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
   padding-bottom: 0.5rem;
@@ -104,55 +197,111 @@ button[kind="header"] { display: none !important; }
   margin-bottom: 1rem;
 }
 
-/* ── Glow line ────────────────────────────────────────────────────────── */
-.glow-line {
+.section-divider {
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  margin: 1.8rem 0;
-  opacity: 0.4;
+  background: var(--border);
+  margin: 1.5rem 0;
+}
+
+/* ── Column labels ────────────────────────────────────────────────────── */
+.col-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 0.3rem;
+  letter-spacing: 0.02em;
+}
+
+.filter-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-top: 0.8rem;
+  margin-bottom: 0.3rem;
+}
+
+/* ── Helper text ──────────────────────────────────────────────────────── */
+.helper-text {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: var(--text-light);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+}
+
+/* ── Flag cards ───────────────────────────────────────────────────────── */
+.flag-card {
+  background: #FFF5F5;
+  border: 1px solid #FED7D7;
+  border-left: 3px solid var(--red);
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.flag-meta {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: 'Inter', sans-serif;
+  margin-bottom: 0.3rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.flag-text {
+  font-size: 0.82rem;
+  color: var(--text-mid);
+  font-family: 'Inter', sans-serif;
+  line-height: 1.5;
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────── */
 .stButton > button {
   background: var(--accent) !important;
-  color: #080C14 !important;
+  color: #FFFFFF !important;
   border: none !important;
   border-radius: var(--radius) !important;
-  font-family: 'DM Mono', monospace !important;
-  font-weight: 500 !important;
-  font-size: 0.78rem !important;
-  letter-spacing: 0.1em !important;
-  text-transform: uppercase !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 0.85rem !important;
   padding: 0.6rem 1.4rem !important;
-  transition: all 0.2s !important;
-  box-shadow: 0 0 18px var(--accent-glow) !important;
+  transition: all 0.15s !important;
+  box-shadow: var(--shadow) !important;
 }
 
 .stButton > button:hover {
-  background: #00ddb0 !important;
-  box-shadow: 0 0 28px var(--accent-glow) !important;
+  background: var(--accent-hover) !important;
   transform: translateY(-1px) !important;
+  box-shadow: var(--shadow-md) !important;
 }
 
 /* ── File uploader ────────────────────────────────────────────────────── */
 [data-testid="stFileUploader"] {
   background: var(--surface) !important;
-  border: 1px dashed var(--border) !important;
+  border: 2px dashed var(--border2) !important;
   border-radius: var(--radius-lg) !important;
-  transition: border-color 0.2s !important;
-}
-
-[data-testid="stFileUploader"]:hover {
-  border-color: var(--accent) !important;
 }
 
 /* ── Selectbox ────────────────────────────────────────────────────────── */
 .stSelectbox > div > div {
   background: var(--surface) !important;
-  border-color: var(--border) !important;
+  border-color: var(--border2) !important;
   color: var(--text) !important;
-  font-family: 'DM Mono', monospace !important;
-  font-size: 0.78rem !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.85rem !important;
+  box-shadow: var(--shadow) !important;
 }
 
 /* ── Metrics ──────────────────────────────────────────────────────────── */
@@ -161,20 +310,22 @@ button[kind="header"] { display: none !important; }
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
   padding: 1rem !important;
+  box-shadow: var(--shadow) !important;
 }
 
 [data-testid="stMetricValue"] {
-  font-family: 'Syne', sans-serif !important;
+  font-family: 'Inter', sans-serif !important;
   color: var(--accent) !important;
-  font-size: 1.6rem !important;
+  font-weight: 700 !important;
 }
 
 [data-testid="stMetricLabel"] {
-  font-family: 'DM Mono', monospace !important;
+  font-family: 'Inter', sans-serif !important;
   font-size: 0.65rem !important;
-  letter-spacing: 0.1em !important;
   text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
   color: var(--text-muted) !important;
+  font-weight: 500 !important;
 }
 
 /* ── Progress ─────────────────────────────────────────────────────────── */
@@ -187,48 +338,51 @@ button[kind="header"] { display: none !important; }
   background: var(--surface) !important;
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
-  font-family: 'DM Mono', monospace !important;
-  font-size: 0.78rem !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.85rem !important;
+  color: var(--text-mid) !important;
 }
 
 /* ── Dataframe ────────────────────────────────────────────────────────── */
 .stDataFrame {
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
+  box-shadow: var(--shadow) !important;
 }
 
 /* ── Checkbox ─────────────────────────────────────────────────────────── */
 .stCheckbox label {
-  font-family: 'DM Mono', monospace !important;
-  font-size: 0.75rem !important;
-  color: var(--text) !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.82rem !important;
+  color: var(--text-mid) !important;
 }
 
 /* ── Multiselect ──────────────────────────────────────────────────────── */
 .stMultiSelect > div {
   background: var(--surface) !important;
-  border-color: var(--border) !important;
-  font-family: 'DM Mono', monospace !important;
-  font-size: 0.75rem !important;
+  border-color: var(--border2) !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.82rem !important;
 }
 
 /* ── Radio ────────────────────────────────────────────────────────────── */
 .stRadio label {
-  font-family: 'DM Mono', monospace !important;
-  font-size: 0.78rem !important;
-  color: var(--text) !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.88rem !important;
+  color: var(--text-mid) !important;
 }
 
 /* ── Download button ──────────────────────────────────────────────────── */
 .stDownloadButton > button {
-  background: var(--surface2) !important;
+  background: var(--surface) !important;
   color: var(--accent) !important;
-  border: 1px solid var(--border) !important;
+  border: 1px solid var(--border2) !important;
   border-radius: var(--radius) !important;
-  font-family: 'DM Mono', monospace !important;
-  font-size: 0.78rem !important;
-  letter-spacing: 0.08em !important;
-  box-shadow: none !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.85rem !important;
+  font-weight: 500 !important;
+  box-shadow: var(--shadow) !important;
+  transform: none !important;
 }
 
 .stDownloadButton > button:hover {
@@ -246,15 +400,8 @@ hr {
 /* ── Scrollbar ────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-/* ── Blink cursor ─────────────────────────────────────────────────────── */
-.blink {
-  animation: blink 1.2s step-end infinite;
-  color: var(--accent);
-}
-@keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-light); }
 
 /* ── Hide Streamlit chrome ────────────────────────────────────────────── */
 #MainMenu, footer, header { visibility: hidden; }
