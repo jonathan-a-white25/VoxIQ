@@ -7,7 +7,7 @@ Pages:
   3. Performance — Product Performance Analysis
 """
 
-import os, io, re
+import os, io, re, json
 from collections import Counter
 import numpy as np
 import pandas as pd
@@ -72,18 +72,21 @@ TEXT_HINTS    = ["text","review","body","content","comment","description",
 RATING_HINTS  = ["rating","stars","score","star_rating","ratings","review_score",
                  "star_rating","num_stars","overall","overall_rating","score",
                  "rate","rated","review_rating","avg_rating","user_rating"]
-PRODUCT_HINTS = ["title_meta","product_name","product","name","item_name",
+PRODUCT_HINTS = ["title_meta","product_name","product","item_name",
                  "item","sku","asin","parent_asin","product_id","item_id",
                  "business_name","business","restaurant","hotel","location",
                  "coffee_shop_name","shop_name","store","store_name","brand",
-                 "company","service","venue","place_name","listing"]
+                 "company","service","venue","place_name","listing",
+                 "city","branch","outlet","region"]
 DATE_HINTS    = ["date","review_date","created_at","timestamp","time","posted",
                  "date_posted","review_time","post_date","submission_date",
                  "created","updated","modified","published","review_created"]
-TITLE_HINTS   = ["title_review","review_title","subject","headline","summary"]
+TITLE_HINTS    = ["title_review","review_title","subject","headline","summary"]
+REVIEWER_HINTS = ["name","reviewer","reviewer_name","username","user","author","customer"]
 
-def detect_col(df, hints):
-    cols_lower = {c.lower().replace(" ","_"): c for c in df.columns}
+def detect_col(df, hints, exclude=None):
+    exclude = exclude or set()
+    cols_lower = {c.lower().replace(" ","_"): c for c in df.columns if c not in exclude}
     for h in hints:
         if h in cols_lower:
             return cols_lower[h]
@@ -95,16 +98,26 @@ def detect_col(df, hints):
     return None
 
 def auto_detect_columns(df):
+    # Identify reviewer columns first so they are never matched to other roles
+    reviewer_cols = set()
+    cols_lower = {c.lower().replace(" ","_"): c for c in df.columns}
+    for h in REVIEWER_HINTS:
+        for col_norm, col_orig in cols_lower.items():
+            if h == col_norm or h in col_norm:
+                reviewer_cols.add(col_orig)
+
     detected = {
-        "text":    detect_col(df, TEXT_HINTS),
-        "rating":  detect_col(df, RATING_HINTS),
-        "product": detect_col(df, PRODUCT_HINTS),
-        "date":    detect_col(df, DATE_HINTS),
-        "title":   detect_col(df, TITLE_HINTS),
+        "text":    detect_col(df, TEXT_HINTS,    exclude=reviewer_cols),
+        "rating":  detect_col(df, RATING_HINTS,  exclude=reviewer_cols),
+        "product": detect_col(df, PRODUCT_HINTS, exclude=reviewer_cols),
+        "date":    detect_col(df, DATE_HINTS,    exclude=reviewer_cols),
+        "title":   detect_col(df, TITLE_HINTS,   exclude=reviewer_cols),
     }
     # Content-based fallback for text column
     if not detected["text"]:
         for col in df.columns:
+            if col in reviewer_cols:
+                continue
             avg_len = df[col].astype(str).str.len().mean()
             if avg_len > 80:
                 detected["text"] = col
@@ -112,6 +125,8 @@ def auto_detect_columns(df):
     # Content-based fallback for rating column
     if not detected["rating"]:
         for col in df.columns:
+            if col in reviewer_cols:
+                continue
             try:
                 vals = pd.to_numeric(df[col].astype(str).str.extract(r"([\d.]+)")[0], errors="coerce")
                 if vals.dropna().between(1, 5).all() and vals.nunique() <= 10:
@@ -242,6 +257,24 @@ def clean_text_prefixes(df, text_col):
     if has_dates:
         return df, extracted_dates
     return df, None
+
+# ── Mapping persistence ───────────────────────────────────────────────────────
+MAPPINGS_PATH = os.path.join(BASE_DIR, "voxiq_mappings.json")
+
+def load_saved_mapping(filename):
+    if not os.path.exists(MAPPINGS_PATH):
+        return None
+    with open(MAPPINGS_PATH) as f:
+        return json.load(f).get(filename)
+
+def save_mapping(filename, cols_map):
+    mappings = {}
+    if os.path.exists(MAPPINGS_PATH):
+        with open(MAPPINGS_PATH) as f:
+            mappings = json.load(f)
+    mappings[filename] = {k: v for k, v in cols_map.items() if v is not None}
+    with open(MAPPINGS_PATH, "w") as f:
+        json.dump(mappings, f, indent=2)
 
 # ── Filter helper ─────────────────────────────────────────────────────────────
 def apply_filters(df, cols):
@@ -423,13 +456,22 @@ if page == "Overview":
         st.session_state["raw_df"] = raw_df
         st.success(f"{fmt_k(len(raw_df))} rows detected · {len(raw_df.columns)} columns")
 
-        detected = auto_detect_columns(raw_df)
+        saved_mapping   = load_saved_mapping(up.name)
+        mapping_loaded  = saved_mapping is not None
+        detected        = saved_mapping if mapping_loaded else auto_detect_columns(raw_df)
+
         section("Column Detection")
-        st.markdown(
-            '<div class="helper-text">VoxIQ has automatically identified your columns. '
-            'Confirm or adjust below before scoring.</div>',
-            unsafe_allow_html=True,
-        )
+        if mapping_loaded:
+            st.markdown(
+                '<div class="helper-text">Mapping saved for this dataset</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="helper-text">VoxIQ has automatically identified your columns. '
+                'Confirm or adjust below before scoring.</div>',
+                unsafe_allow_html=True,
+            )
 
         el_col, _ = st.columns([1, 3])
         with el_col:
@@ -446,32 +488,35 @@ if page == "Overview":
         with c1:
             st.markdown('<div class="col-label">Review Text</div>', unsafe_allow_html=True)
             text_col = st.selectbox("", raw_df.columns.tolist(),
-                index=raw_df.columns.tolist().index(detected["text"]) if detected["text"] else 0,
+                index=raw_df.columns.tolist().index(detected["text"]) if detected.get("text") in raw_df.columns.tolist() else 0,
                 key="col_text", label_visibility="collapsed")
         with c2:
             st.markdown('<div class="col-label">Rating</div>', unsafe_allow_html=True)
             rating_col = st.selectbox("", all_cols_str,
-                index=all_cols.index(detected["rating"]) if detected["rating"] else 0,
+                index=all_cols.index(detected["rating"]) if detected.get("rating") in all_cols else 0,
                 key="col_rating", label_visibility="collapsed")
             rating_col = None if rating_col == "— not available —" else rating_col
         with c3:
             st.markdown('<div class="col-label">Product Name</div>', unsafe_allow_html=True)
             product_col = st.selectbox("", all_cols_str,
-                index=all_cols.index(detected["product"]) if detected["product"] else 0,
+                index=all_cols.index(detected["product"]) if detected.get("product") in all_cols else 0,
                 key="col_product", label_visibility="collapsed")
             product_col = None if product_col == "— not available —" else product_col
         with c4:
             st.markdown('<div class="col-label">Date</div>', unsafe_allow_html=True)
             date_col = st.selectbox("", all_cols_str,
-                index=all_cols.index(detected["date"]) if detected["date"] else 0,
+                index=all_cols.index(detected["date"]) if detected.get("date") in all_cols else 0,
                 key="col_date", label_visibility="collapsed")
             date_col = None if date_col == "— not available —" else date_col
         with c5:
             st.markdown('<div class="col-label">Review Title</div>', unsafe_allow_html=True)
             title_col = st.selectbox("", all_cols_str,
-                index=all_cols.index(detected["title"]) if detected["title"] else 0,
+                index=all_cols.index(detected["title"]) if detected.get("title") in all_cols else 0,
                 key="col_title", label_visibility="collapsed")
             title_col = None if title_col == "— not available —" else title_col
+
+        save_mapping_checked = st.checkbox("Save this mapping", value=mapping_loaded,
+                                           key="save_mapping_cb")
 
         st.markdown("---")
         with st.expander("Preview uploaded data (first 5 rows)"):
@@ -491,6 +536,8 @@ if page == "Overview":
                         scored["_extracted_date"] = extracted_dates.values
                     cols_map = {"text": text_col, "rating": rating_col,
                                 "product": product_col, "date": date_col, "title": title_col}
+                    if save_mapping_checked:
+                        save_mapping(up.name, cols_map)
                     st.session_state["df_scored"] = scored
                     st.session_state["cols"]      = cols_map
 
