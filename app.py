@@ -258,6 +258,40 @@ def clean_text_prefixes(df, text_col):
         return df, extracted_dates
     return df, None
 
+# ── Training data export ──────────────────────────────────────────────────────
+def upload_training_data_to_s3(scored, text_col, filename):
+    try:
+        import boto3
+        from datetime import datetime, timezone
+        high_conf = scored[scored["confidence_score"] >= 0.85][
+            [text_col, "predicted_sentiment", "confidence_score"]
+        ].rename(columns={text_col: "text"})
+        if high_conf.empty:
+            return
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        key = f"training_data/{timestamp}_{filename}"
+        buf = io.BytesIO()
+        high_conf.to_csv(buf, index=False)
+        buf.seek(0)
+        boto3.client("s3").put_object(
+            Bucket="operationcapstone-models", Key=key, Body=buf.getvalue()
+        )
+    except Exception as e:
+        st.warning(f"Training data upload skipped: {e}")
+
+# ── Model version info ────────────────────────────────────────────────────────
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_model_info():
+    try:
+        import boto3, json as _json
+        obj = boto3.client("s3").get_object(
+            Bucket="operationcapstone-models", Key="model_versions/log.json"
+        )
+        log = _json.loads(obj["Body"].read())
+        return log[-1] if log else None
+    except Exception:
+        return None
+
 # ── Mapping persistence ───────────────────────────────────────────────────────
 MAPPINGS_PATH = os.path.join(BASE_DIR, "voxiq_mappings.json")
 
@@ -336,6 +370,26 @@ with st.sidebar:
                     del st.session_state[k]
             st.rerun()
 
+    st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
+    model_info = fetch_model_info()
+    if model_info:
+        from datetime import datetime
+        try:
+            retrain_date = datetime.fromisoformat(model_info["timestamp"]).strftime("%b %d, %Y")
+        except Exception:
+            retrain_date = model_info.get("timestamp", "—")
+        st.markdown(
+            f'<div class="sidebar-section">Model Info</div>'
+            f'<div class="sidebar-meta">v{model_info.get("version","—")} · Retrained {retrain_date}</div>'
+            f'<div class="sidebar-meta">{model_info.get("rows_trained",0):,} rows · '
+            f'{model_info.get("accuracy",0)*100:.1f}% acc</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="sidebar-meta">Model info unavailable</div>',
+            unsafe_allow_html=True,
+        )
     st.markdown('<div class="sidebar-divider"></div>', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-footer">VoxIQ v1.0 · Powered by DistilBERT</div>', unsafe_allow_html=True)
 
@@ -534,6 +588,7 @@ if page == "Overview":
                     scored = score_dataframe(raw_df, text_col)
                     if extracted_dates is not None and date_col == "_extracted_date":
                         scored["_extracted_date"] = extracted_dates.values
+                    upload_training_data_to_s3(scored, text_col, up.name)
                     cols_map = {"text": text_col, "rating": rating_col,
                                 "product": product_col, "date": date_col, "title": title_col}
                     if save_mapping_checked:
