@@ -299,14 +299,33 @@ def load_saved_mapping(filename):
     if not os.path.exists(MAPPINGS_PATH):
         return None
     with open(MAPPINGS_PATH) as f:
-        return json.load(f).get(filename)
+        saved = json.load(f).get(filename)
+    if saved is None:
+        return None
+    # Backward compat: migrate old "date"/"title" top-level keys to extras
+    if "date" in saved or "title" in saved:
+        extras = list(saved.get("extras", []))
+        if saved.get("date"):
+            extras.insert(0, {"label": "Date", "col": saved.pop("date")})
+        if saved.get("title"):
+            extras.append({"label": "Review Title", "col": saved.pop("title")})
+        saved["extras"] = extras
+    return saved
 
 def save_mapping(filename, cols_map):
     mappings = {}
     if os.path.exists(MAPPINGS_PATH):
         with open(MAPPINGS_PATH) as f:
             mappings = json.load(f)
-    mappings[filename] = {k: v for k, v in cols_map.items() if v is not None}
+    entry = {}
+    for k in ("text", "rating", "product"):
+        if cols_map.get(k):
+            entry[k] = cols_map[k]
+    if cols_map.get("entity_label"):
+        entry["entity_label"] = cols_map["entity_label"]
+    if cols_map.get("extras"):
+        entry["extras"] = [e for e in cols_map["extras"] if e.get("col")]
+    mappings[filename] = entry
     with open(MAPPINGS_PATH, "w") as f:
         json.dump(mappings, f, indent=2)
 
@@ -514,7 +533,22 @@ if page == "Overview":
         mapping_loaded  = saved_mapping is not None
         detected        = saved_mapping if mapping_loaded else auto_detect_columns(raw_df)
 
-        section("Column Detection")
+        # Reset extra columns whenever a new file is uploaded
+        if st.session_state.get("_last_mapped_file") != up.name:
+            if mapping_loaded:
+                st.session_state["extra_cols"] = saved_mapping.get("extras", [])
+                if saved_mapping.get("entity_label"):
+                    st.session_state["entity_label"] = saved_mapping["entity_label"]
+            else:
+                extras = []
+                if detected.get("date"):
+                    extras.append({"label": "Date", "col": detected["date"]})
+                if detected.get("title"):
+                    extras.append({"label": "Review Title", "col": detected["title"]})
+                st.session_state["extra_cols"] = extras
+            st.session_state["_last_mapped_file"] = up.name
+
+        section("Column Mapping")
         if mapping_loaded:
             st.markdown(
                 '<div class="helper-text">Mapping saved for this dataset</div>',
@@ -527,18 +561,11 @@ if page == "Overview":
                 unsafe_allow_html=True,
             )
 
-        el_col, _ = st.columns([1, 3])
-        with el_col:
-            st.markdown('<div class="col-label">What are you reviewing?</div>', unsafe_allow_html=True)
-            entity_input = st.text_input("", value=st.session_state.get("entity_label", "Product"),
-                placeholder="e.g. Product, Coffee Shop, Hotel",
-                label_visibility="collapsed", key="entity_label_input")
-            st.session_state["entity_label"] = entity_input
-
         all_cols     = [None] + list(raw_df.columns)
         all_cols_str = ["— not available —"] + list(raw_df.columns)
 
-        c1, c2, c3, c4, c5 = st.columns(5)
+        # ── Row 1: core columns ───────────────────────────────────────────────
+        c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
         with c1:
             st.markdown('<div class="col-label">Review Text</div>', unsafe_allow_html=True)
             text_col = st.selectbox("", raw_df.columns.tolist(),
@@ -551,23 +578,39 @@ if page == "Overview":
                 key="col_rating", label_visibility="collapsed")
             rating_col = None if rating_col == "— not available —" else rating_col
         with c3:
-            st.markdown('<div class="col-label">Product Name</div>', unsafe_allow_html=True)
-            product_col = st.selectbox("", all_cols_str,
+            entity_input = st.text_input("", value=st.session_state.get("entity_label", "Product"),
+                placeholder="e.g. Product, Location, Hotel",
+                label_visibility="collapsed", key="entity_label_input")
+            st.session_state["entity_label"] = entity_input
+            entity_col = st.selectbox("", all_cols_str,
                 index=all_cols.index(detected["product"]) if detected.get("product") in all_cols else 0,
                 key="col_product", label_visibility="collapsed")
-            product_col = None if product_col == "— not available —" else product_col
+            entity_col = None if entity_col == "— not available —" else entity_col
         with c4:
-            st.markdown('<div class="col-label">Date</div>', unsafe_allow_html=True)
-            date_col = st.selectbox("", all_cols_str,
-                index=all_cols.index(detected["date"]) if detected.get("date") in all_cols else 0,
-                key="col_date", label_visibility="collapsed")
-            date_col = None if date_col == "— not available —" else date_col
-        with c5:
-            st.markdown('<div class="col-label">Review Title</div>', unsafe_allow_html=True)
-            title_col = st.selectbox("", all_cols_str,
-                index=all_cols.index(detected["title"]) if detected.get("title") in all_cols else 0,
-                key="col_title", label_visibility="collapsed")
-            title_col = None if title_col == "— not available —" else title_col
+            st.markdown('<div class="col-label">&nbsp;</div>', unsafe_allow_html=True)
+            if st.button("＋", use_container_width=True, help="Add another column"):
+                if "extra_cols" not in st.session_state:
+                    st.session_state["extra_cols"] = []
+                st.session_state["extra_cols"].append({"label": "", "col": None})
+                st.rerun()
+
+        # ── Extra columns (below) ─────────────────────────────────────────────
+        extra_cols_state = st.session_state.get("extra_cols", [])
+        for i, extra in enumerate(extra_cols_state):
+            ex1, ex2, ex3 = st.columns([1.5, 3.5, 0.6])
+            with ex1:
+                st.text_input("Label", value=extra.get("label", ""),
+                              placeholder="Label",
+                              key=f"extra_label_{i}", label_visibility="collapsed")
+            with ex2:
+                saved_col = extra.get("col")
+                idx = all_cols.index(saved_col) if saved_col in all_cols else 0
+                st.selectbox("Column", all_cols_str, index=idx,
+                             key=f"extra_col_{i}", label_visibility="collapsed")
+            with ex3:
+                if st.button("✕", key=f"rm_extra_{i}", use_container_width=True):
+                    st.session_state["extra_cols"].pop(i)
+                    st.rerun()
 
         save_mapping_checked = st.checkbox("Save this mapping", value=mapping_loaded,
                                            key="save_mapping_cb")
@@ -581,16 +624,37 @@ if page == "Overview":
                 st.error("Please select a Review Text column before scoring.")
             else:
                 try:
+                    # Build extras from widget state
+                    n_extras = len(st.session_state.get("extra_cols", []))
+                    extras_built = []
+                    for i in range(n_extras):
+                        lbl   = st.session_state.get(f"extra_label_{i}", "").strip()
+                        col_v = st.session_state.get(f"extra_col_{i}", "— not available —")
+                        col_v = None if col_v == "— not available —" else col_v
+                        extras_built.append({"label": lbl or f"Extra {i+1}", "col": col_v})
+
                     raw_df = clean_rating_col(raw_df, rating_col)
                     raw_df, extracted_dates = clean_text_prefixes(raw_df, text_col)
+                    # Use date from extras if present; otherwise fall back to extracted dates
+                    date_col = next(
+                        (e["col"] for e in extras_built if e.get("col") and "date" in e.get("label", "").lower()),
+                        None
+                    )
                     if extracted_dates is not None and not date_col:
                         date_col = "_extracted_date"
+                        extras_built.append({"label": "Date", "col": "_extracted_date"})
+                        st.session_state["extra_cols"].append({"label": "Date", "col": "_extracted_date"})
                     scored = score_dataframe(raw_df, text_col)
                     if extracted_dates is not None and date_col == "_extracted_date":
                         scored["_extracted_date"] = extracted_dates.values
                     upload_training_data_to_s3(scored, text_col, up.name)
-                    cols_map = {"text": text_col, "rating": rating_col,
-                                "product": product_col, "date": date_col, "title": title_col}
+                    cols_map = {
+                        "text":         text_col,
+                        "rating":       rating_col,
+                        "product":      entity_col,
+                        "entity_label": st.session_state.get("entity_label", "Product"),
+                        "extras":       extras_built,
+                    }
                     if save_mapping_checked:
                         save_mapping(up.name, cols_map)
                     st.session_state["df_scored"] = scored
