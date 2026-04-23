@@ -7,6 +7,14 @@ Pages:
   3. Performance — Product Performance Analysis
 """
 
+# ══════════════════════════════════════════════════════════════════════════════
+# IMPORTS
+# These are the external libraries the app depends on.
+#   - os, io, re, json: standard Python tools for file paths, bytes, regex, JSON
+#   - numpy / pandas: numerical computing and dataframe manipulation
+#   - streamlit: the web framework that renders every UI element
+#   - plotly: interactive charts (bar, pie, heatmap, etc.)
+# ══════════════════════════════════════════════════════════════════════════════
 import os, io, re, json
 from collections import Counter
 import numpy as np
@@ -15,6 +23,9 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
+# ── App configuration ─────────────────────────────────────────────────────────
+# This must be the FIRST Streamlit call in the file or it will throw an error.
+# It sets the browser tab title, icon, and makes the app use the full screen width.
 st.set_page_config(
     page_title="VoxIQ",
     page_icon="📊",
@@ -22,6 +33,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── CSS / Styling ─────────────────────────────────────────────────────────────
+# Loads our custom stylesheet (style.css) and injects it into the page.
+# This is how we override Streamlit's default look — fonts, colors, card styles, etc.
+# unsafe_allow_html=True is required any time we inject raw HTML or CSS.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 css_path = os.path.join(BASE_DIR, "style.css")
 if os.path.exists(css_path):
@@ -29,23 +44,30 @@ if os.path.exists(css_path):
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 # ── Plotly theme ──────────────────────────────────────────────────────────────
+# PL is a shared dictionary of chart styling options passed to every Plotly chart.
+# Instead of repeating these settings on every chart, we define them once and
+# unpack them with **PL. This keeps all charts visually consistent.
 PL = dict(
     template="plotly_white",
-    paper_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",    # transparent background so CSS shines through
     plot_bgcolor="rgba(248,250,252,0.8)",
     font_family="Inter, sans-serif",
     font_color="#1E293B",
     margin=dict(l=20, r=20, t=45, b=20),
 )
 
-ACCENT = "#3B82F6"
-GREEN  = "#10B981"
-RED    = "#EF4444"
-YELLOW = "#F59E0B"
+# ── Color constants ───────────────────────────────────────────────────────────
+# Named hex colors used throughout the UI and charts.
+# Centralizing these means we only change one line if we want to update a color.
+ACCENT = "#3B82F6"  # blue — primary brand color
+GREEN  = "#10B981"  # positive sentiment
+RED    = "#EF4444"  # negative sentiment
+YELLOW = "#F59E0B"  # neutral / warning
 PURPLE = "#8B5CF6"
 TEAL   = "#06B6D4"
 ORANGE = "#F97316"
 
+# Maps sentiment labels to their display colors in charts and cards.
 SENT_COLORS = {
     "positive": GREEN,
     "negative": RED,
@@ -53,6 +75,11 @@ SENT_COLORS = {
     "unknown":  "#94A3B8",
 }
 
+# ── Stopwords ─────────────────────────────────────────────────────────────────
+# Words to exclude from the keyword frequency chart on the Insights page.
+# Without this, the most common words would be "the", "a", "it", etc. —
+# meaningless for sentiment analysis. We also include platform-specific noise
+# like "amazon", "yelp", "check-in" so those don't dominate the results.
 STOPWORDS = {
     "i","me","my","we","our","you","your","it","its","the","a","an","and","or",
     "but","in","on","at","to","for","of","with","this","that","is","was","are",
@@ -65,6 +92,10 @@ STOPWORDS = {
 }
 
 # ── Column auto-detection ─────────────────────────────────────────────────────
+# When a user uploads a CSV, we don't know what their columns are named.
+# These hint lists are our "vocabulary" for guessing which column serves which role.
+# For example, if someone has a column called "review_body", we match it to TEXT_HINTS.
+# The lists cover common naming conventions from Amazon, Yelp, Google, and custom exports.
 TEXT_HINTS    = ["text","review","body","content","comment","description",
                  "review_text","reviewtext","clean_text","feedback","message",
                  "full_review_text","review_body","reviewbody","review_content",
@@ -85,6 +116,17 @@ TITLE_HINTS    = ["title_review","review_title","subject","headline","summary"]
 REVIEWER_HINTS = ["name","reviewer","reviewer_name","username","user","author","customer"]
 
 def detect_col(df, hints, exclude=None):
+    """
+    Tries to find which column in the dataframe matches a given role (text, rating, etc.)
+    by comparing column names against the hint lists above.
+
+    Step 1 — Exact match: normalizes column names to lowercase with underscores,
+             then checks if any hint matches exactly.
+    Step 2 — Fuzzy fallback: checks if any hint is a substring of a column name,
+             or vice versa. Catches cases like "review_text_clean" matching "review_text".
+    The `exclude` set prevents reviewer name columns from being accidentally matched
+    to other roles (e.g., a "name" column being picked as the product column).
+    """
     exclude = exclude or set()
     cols_lower = {c.lower().replace(" ","_"): c for c in df.columns if c not in exclude}
     for h in hints:
@@ -98,6 +140,17 @@ def detect_col(df, hints, exclude=None):
     return None
 
 def auto_detect_columns(df):
+    """
+    Runs detect_col() for each role and returns a dict of best guesses.
+    Also includes two content-based fallbacks for when hint matching fails:
+      - Text fallback: if no text column found by name, look for the column
+        with the longest average string length (likely the review body).
+      - Rating fallback: if no rating column found by name, look for a column
+        whose values are all numbers between 1-5 with 10 or fewer unique values.
+
+    Reviewer columns (name, author, username) are identified first and excluded
+    from all other matching — otherwise "name" could match as a product column.
+    """
     # Identify reviewer columns first so they are never matched to other roles
     reviewer_cols = set()
     cols_lower = {c.lower().replace(" ","_"): c for c in df.columns}
@@ -113,7 +166,7 @@ def auto_detect_columns(df):
         "date":    detect_col(df, DATE_HINTS,    exclude=reviewer_cols),
         "title":   detect_col(df, TITLE_HINTS,   exclude=reviewer_cols),
     }
-    # Content-based fallback for text column
+    # Content-based fallback: if no text column found by name, pick the longest column
     if not detected["text"]:
         for col in df.columns:
             if col in reviewer_cols:
@@ -122,7 +175,7 @@ def auto_detect_columns(df):
             if avg_len > 80:
                 detected["text"] = col
                 break
-    # Content-based fallback for rating column
+    # Content-based fallback: if no rating column found by name, look for a 1-5 numeric column
     if not detected["rating"]:
         for col in df.columns:
             if col in reviewer_cols:
@@ -136,22 +189,34 @@ def auto_detect_columns(df):
                 pass
     return detected
 
+# ── UI helper functions ───────────────────────────────────────────────────────
+# Small reusable utilities used throughout all three pages.
+
 def truncate_label(val, max_len=30):
+    """Cuts long product/location names down so they don't overflow chart labels."""
     s = str(val)
     return s[:max_len] + "..." if len(s) > max_len else s
 
 def fmt_k(n):
+    """Formats large numbers for display: 1500 → '1.5K', 2000000 → '2.0M'."""
     if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
     if n >= 1_000:     return f"{n/1_000:.1f}K"
     return str(int(n))
 
 def section(label):
+    """Renders a styled section header using a CSS class defined in style.css."""
     st.markdown(f'<div class="section-header">{label}</div>', unsafe_allow_html=True)
 
 def divider():
+    """Renders a horizontal visual divider between sections."""
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
 def kpi(label, value, col, color=None):
+    """
+    Renders a single KPI metric card into a Streamlit column.
+    Used to display summary stats like 'Total Reviews', 'Avg Rating', etc.
+    The card is styled with a large colored value and a smaller gray label below it.
+    """
     c = color or ACCENT
     col.markdown(
         f'<div class="kpi-card">'
@@ -161,9 +226,28 @@ def kpi(label, value, col, color=None):
         unsafe_allow_html=True,
     )
 
-# ── Scoring ───────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# SCORING ENGINE
+# This is the core of VoxIQ — the AI model that reads reviews and predicts sentiment.
+# ══════════════════════════════════════════════════════════════════════════════
+
 @st.cache_resource(show_spinner=False)
 def load_model_from_s3():
+    """
+    Downloads our fine-tuned DistilBERT model from S3 and loads it into memory.
+
+    @st.cache_resource means this function only runs ONCE per server session —
+    the model stays loaded in RAM and is reused for every subsequent scoring run.
+    Without this, we'd re-download the model on every page interaction (very slow).
+
+    Flow:
+      1. Connect to S3 and download the 6 model files (weights, config, tokenizer vocab)
+         into a local cache directory on the server (~/.voxiq_model_cache/).
+      2. Skip any file that already exists — so restarts are fast.
+      3. Load the tokenizer (converts text to token IDs) and the model (the neural network).
+      4. Set the model to eval() mode — disables dropout layers used during training.
+      5. Move everything to GPU if available, otherwise CPU.
+    """
     import boto3
     from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
     import torch
@@ -189,6 +273,27 @@ def load_model_from_s3():
     return tokenizer, model.to(device), device
 
 def score_dataframe(df, text_col, batch_size=64):
+    """
+    Runs every review through the DistilBERT model and adds three new columns:
+      - predicted_sentiment:  'positive' or 'negative'
+      - confidence_score:     how certain the model is (0.0 – 1.0)
+      - positive_probability: raw probability of being positive (0.0 – 1.0)
+
+    Why batches?
+      The model can't process 50,000 reviews at once — it would run out of memory.
+      We send 64 reviews at a time (one batch), get predictions back, and accumulate
+      results in lists. The progress bar updates after each batch.
+
+    What torch.no_grad() does:
+      During training, PyTorch tracks every calculation to compute gradients.
+      We don't need gradients when making predictions — disabling them saves memory
+      and makes inference significantly faster.
+
+    What softmax does:
+      The model outputs raw "logit" scores (e.g., [-1.2, 2.4]). Softmax converts
+      these into proper probabilities that sum to 1.0 (e.g., [0.05, 0.95]).
+      The higher value is our predicted class; its probability is the confidence score.
+    """
     import torch
     tokenizer, model, device = load_model_from_s3()
     texts = df[text_col].fillna("").astype(str).tolist()
@@ -224,9 +329,25 @@ def score_dataframe(df, text_col, batch_size=64):
 
 @st.cache_data(show_spinner=False)
 def load_csv(file_bytes):
+    """
+    Reads the uploaded CSV file into a pandas DataFrame.
+    @st.cache_data caches the result by file content — so if the same file is
+    uploaded twice, it skips re-reading and returns the cached version instantly.
+    We receive raw bytes from the uploader, wrap them in BytesIO, and pass to pandas.
+    """
     return pd.read_csv(io.BytesIO(file_bytes))
 
 def get_word_freq(texts, top_n=15):
+    """
+    Counts the most common meaningful words across a list of review texts.
+    Used to power the 'Top Keywords by Sentiment' chart on the Insights page.
+
+    Steps:
+      1. For each review, extract all lowercase words that are 3+ characters long.
+      2. Filter out stopwords (see STOPWORDS set above).
+      3. Count everything using Counter and return the top N most frequent words.
+    The regex r'\b[a-z]{3,}\b' means: word boundary, 3+ lowercase letters, word boundary.
+    """
     words = []
     for t in texts:
         tokens = re.findall(r'\b[a-z]{3,}\b', str(t).lower())
@@ -234,6 +355,12 @@ def get_word_freq(texts, top_n=15):
     return Counter(words).most_common(top_n)
 
 def clean_rating_col(df, rating_col):
+    """
+    Normalizes the rating column to plain numbers.
+    Some datasets store ratings as strings like "4.0 star rating" or "3 stars".
+    This function extracts just the numeric part using a regex, so the model
+    and charts can treat ratings as actual numbers rather than text.
+    """
     if rating_col and rating_col in df.columns:
         df = df.copy()
         extracted = df[rating_col].astype(str).str.extract(r'([\d.]+)')
@@ -242,6 +369,20 @@ def clean_rating_col(df, rating_col):
     return df
 
 def clean_text_prefixes(df, text_col):
+    """
+    Strips noise from the beginning of review text before it reaches the model.
+    Some platforms (especially Yelp) embed metadata at the start of the text field:
+      - Dates: "03/15/2023 Great coffee!" → strips the date, saves it separately
+      - Check-in counts: "47 check-ins Great coffee!" → strips the number
+      - Category tags: "Listed in Coffee, Breakfast Great coffee!" → strips the tag
+
+    Why this matters: the model was trained on clean review text. Feeding it
+    "47 check-ins" as the start of a review would confuse it and reduce accuracy.
+
+    The date extraction is smart: if more than 5% of reviews have dates at the
+    start, we save them in a separate '_extracted_date' column so the timeline
+    chart can use them later. If fewer than 5% have dates, we just strip them.
+    """
     if not text_col or text_col not in df.columns:
         return df, None
     df = df.copy()
@@ -260,6 +401,24 @@ def clean_text_prefixes(df, text_col):
 
 # ── Training data export ──────────────────────────────────────────────────────
 def upload_training_data_to_s3(scored, text_col, filename):
+    """
+    After every scoring run, this function automatically feeds high-quality
+    predictions back into S3 so the model can learn from them during retraining.
+
+    This is the INPUT side of the automated retraining pipeline:
+      VoxIQ scores data → this function uploads to S3/training_data/ →
+      EventBridge triggers Lambda every Monday → SageMaker retrains on all
+      accumulated CSVs → new model replaces the old one.
+
+    Why only confidence >= 0.85?
+      We only want high-confidence predictions for retraining. If the model was
+      uncertain about a review (e.g., 60% positive), using it as training data
+      could teach the model incorrect labels and degrade performance over time.
+      At 85%+ confidence, we trust the prediction enough to treat it as ground truth.
+
+    The upload is wrapped in try/except so a failed S3 upload never crashes the
+    scoring flow — the user still gets their results, and we just show a warning.
+    """
     try:
         import boto3
         from datetime import datetime, timezone
@@ -282,6 +441,19 @@ def upload_training_data_to_s3(scored, text_col, filename):
 # ── Model version info ────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_model_info():
+    """
+    Reads the model version log from S3 and returns the most recent entry.
+    This powers the 'Model Info' section in the sidebar showing version number,
+    retraining date, how many rows it was trained on, and its accuracy.
+
+    The log is a JSON array where each entry is appended after a successful
+    SageMaker retraining job. We grab the last item (most recent version).
+
+    @st.cache_data(ttl=3600) means the result is cached for 1 hour.
+    After an hour, the next user interaction fetches fresh data from S3.
+    This avoids hitting S3 on every single page load while still staying
+    reasonably up to date after a retraining job completes.
+    """
     try:
         import boto3, json as _json
         obj = boto3.client("s3").get_object(
@@ -293,6 +465,10 @@ def fetch_model_info():
         return None
 
 # ── Mapping persistence ───────────────────────────────────────────────────────
+# When a user corrects the auto-detected column mapping, we save it to a local
+# JSON file keyed by the original filename. The next time they upload the same
+# file, we load their saved mapping instead of re-running auto-detection.
+# This means users never have to manually remap the same dataset twice.
 MAPPINGS_PATH = os.path.join(BASE_DIR, "voxiq_mappings.json")
 
 def load_saved_mapping(filename):
@@ -331,6 +507,24 @@ def save_mapping(filename, cols_map):
 
 # ── Filter helper ─────────────────────────────────────────────────────────────
 def apply_filters(df, cols):
+    """
+    Reads the current filter selections from session state and returns a filtered
+    copy of the scored dataframe. Every chart and metric on the Insights and
+    Performance pages calls this first, so filters affect everything simultaneously.
+
+    Filters applied in order:
+      1. Sentiment    — show only positive, negative, or both
+      2. Rating       — show only selected star ratings (e.g., just 1-star and 2-star)
+      3. Product      — show only selected products/locations
+      4. Keyword      — show only reviews containing a specific word or phrase
+      5. Confidence   — hide reviews where the model was below a certainty threshold
+      6. Score range  — narrow to reviews within a specific positive probability range
+
+    We read filter values from st.session_state because the filter widgets (checkboxes,
+    sliders, etc.) are defined in render_filters_panel() — a separate function that runs
+    before this one. Streamlit stores widget values in session_state so they can be
+    accessed anywhere in the script on the same page load.
+    """
     fdf = df.copy()
 
     # Sentiment
@@ -364,7 +558,14 @@ def apply_filters(df, cols):
 
     return fdf.copy()
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR
+# The sidebar renders on every page. It contains:
+#   - Navigation (Overview / Insights / Performance)
+#   - Active dataset status + "Clear dataset" button
+#   - Model version info pulled from S3
+# The `page` variable set here controls which page block runs further down.
+# ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown(
         '<div class="sidebar-logo">Vox<span>IQ</span></div>'
@@ -421,7 +622,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Filters panel (right side, dashboard pages only) ─────────────────────────
+# ── Filters panel ─────────────────────────────────────────────────────────────
+# This function renders the collapsible filter UI at the top of Insights and
+# Performance pages. It writes filter selections into st.session_state so that
+# apply_filters() (defined above) can read them and filter the dataframe.
+# The two functions work as a pair: render_filters_panel() collects user input,
+# apply_filters() acts on it. They're separated so the filter logic stays clean.
 def render_filters_panel(df, cols):
     with st.expander("Filters", expanded=False):
         st.markdown('<div class="filter-label">Sentiment</div>', unsafe_allow_html=True)
@@ -471,13 +677,21 @@ def render_filters_panel(df, cols):
         st.session_state["f_prob_max"] = prob_range[1]
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PAGE 1 — OVERVIEW (session persistent)
+# PAGE 1 — OVERVIEW
+# This page handles the entire upload → map → score flow.
+# It's "session persistent" meaning once a dataset is scored, navigating away
+# and back does NOT clear it — the scored data stays in st.session_state["df_scored"]
+# until the user explicitly clicks "Clear dataset" in the sidebar.
+#
+# Two states:
+#   A) Dataset already scored → show summary and stop. Don't re-render the upload UI.
+#   B) No dataset → show the upload flow from scratch.
 # ══════════════════════════════════════════════════════════════════════════════
 if page == "Overview":
     df_scored = st.session_state.get("df_scored")
     cols      = st.session_state.get("cols", {})
 
-    # If already scored, show summary instead of wiping state
+    # STATE A: Dataset already in memory — show summary and skip the upload UI entirely
     if df_scored is not None:
         st.markdown(
             '<div class="hero-block">'
@@ -507,7 +721,7 @@ if page == "Overview":
                            use_container_width=True)
         st.stop()
 
-    # Fresh upload flow
+    # STATE B: No dataset yet — show the upload and mapping UI
     st.markdown(
         '<div class="hero-block">'
         '<div class="hero-title">Turn customer reviews into <span>actionable intelligence.</span></div>'
@@ -624,6 +838,14 @@ if page == "Overview":
                 st.error("Please select a Review Text column before scoring.")
             else:
                 try:
+                    # ── Scoring flow ──────────────────────────────────────────
+                    # 1. Collect extra column mappings from widget state
+                    # 2. Clean the data (ratings, text prefixes)
+                    # 3. Run DistilBERT inference
+                    # 4. Upload high-confidence rows to S3 for future retraining
+                    # 5. Store the scored dataframe and column map in session state
+                    #    so Insights and Performance pages can access it immediately
+
                     # Build extras from widget state
                     n_extras = len(st.session_state.get("extra_cols", []))
                     extras_built = []
@@ -702,6 +924,19 @@ if page == "Overview":
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 2 — INSIGHTS
+# Displays customer-level sentiment analysis. All charts here are filtered by
+# the Filters panel at the top — the filtered dataframe `fdf` is what every
+# chart and metric reads from.
+#
+# Charts on this page:
+#   - KPI row: total, avg rating, positive %, negative %, confidence, net sentiment
+#   - Ratings Distribution (bar chart)
+#   - Sentiment Breakdown (donut chart)
+#   - Top Entity by Review Volume (horizontal bar)
+#   - Sentiment by Rating (stacked bar)
+#   - Top Keywords by Sentiment (grouped horizontal bar)
+#   - Top 5 Positive Reviews (cards)
+#   - Top 6 Flagged Negative Reviews (cards, 2 columns)
 # ══════════════════════════════════════════════════════════════════════════════
 if page == "Insights":
     if st.session_state.get("df_scored") is None:
@@ -724,6 +959,9 @@ if page == "Insights":
     neg_n    = (fdf["predicted_sentiment"] == "negative").sum()
     pos_pct  = pos_n / total * 100 if total else 0
     neg_pct  = neg_n / total * 100 if total else 0
+    # Net Sentiment Score = % positive minus % negative.
+    # A score of +40 means 40% more positive reviews than negative.
+    # This is the single most useful executive-level metric in the dashboard.
     net_sent = round(pos_pct - neg_pct, 1)
     net_color = GREEN if net_sent >= 0 else RED
 
@@ -881,6 +1119,17 @@ if page == "Insights":
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 3 — PERFORMANCE
+# Focuses on entity-level (product/location/etc.) analysis rather than
+# individual review analysis. Requires both a product column and ideally a
+# rating column — warns and stops if neither is present.
+#
+# Charts on this page:
+#   - Average Rating by Entity (horizontal bar, top 10)
+#   - Sentiment by Entity (stacked horizontal bar, top 10)
+#   - Top Positive Entities (horizontal bar, top 10)
+#   - Top Negative Entities (horizontal bar, top 10)
+#   - High-Confidence Negative Heatmap (entity × star rating)
+#   - Entity Summary Table (sortable, top 50, downloadable)
 # ══════════════════════════════════════════════════════════════════════════════
 if page == "Performance":
     if st.session_state.get("df_scored") is None:
@@ -974,7 +1223,12 @@ if page == "Performance":
                           yaxis=dict(autorange="reversed"), **PL)
         st.plotly_chart(fig, use_container_width=True)
 
-    # Heatmap — high confidence negatives by product
+    # ── Heatmap ───────────────────────────────────────────────────────────────
+    # Shows where high-confidence negative reviews are concentrated — which
+    # products are getting the worst reviews at which star ratings.
+    # Only includes reviews where confidence >= 85% to keep the signal clean.
+    # The pivot table reshapes the data: rows = products, columns = star ratings,
+    # values = count of negative reviews. fillna(0) handles missing combinations.
     divider()
     section("High-Confidence Negative Review Heatmap")
 
@@ -1016,6 +1270,12 @@ if page == "Performance":
     divider()
     section("Product Summary Table")
 
+    # ── Summary table ─────────────────────────────────────────────────────────
+    # Aggregates all review data down to one row per product/entity.
+    # Uses pandas .agg() with named aggregations — each key in agg_dict becomes
+    # a column name, and each value is a (source_column, aggregation_function) tuple.
+    # Lambda functions let us write custom aggregations like "% positive" inline.
+    # The result is sorted by review count and capped at 50 rows for readability.
     agg_dict = {
         "review_count": (prod_col, "count"),
         "pct_positive": ("predicted_sentiment", lambda x: round((x=="positive").sum()/len(x)*100, 1)),
